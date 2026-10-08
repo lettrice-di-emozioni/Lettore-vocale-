@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#0f1115"/>
+<title>Lettore Vocale — eBook con sintesi vocale e comandi vocali</title>
+<style>
+:root{--bg:#0f1115;--panel:#171a21;--panel2:#1e222b;--txt:#e8eaed;--mut:#9aa4b2;--acc:#4f8cff;--acc2:#22c55e;--warn:#f59e0b;--hl:#3b2f00;--hlb:#ffd54a}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding-bottom:200px}
+.wrap{max-width:820px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:8px 0 2px}
+h1 span{color:var(--acc)}
+.sub{color:var(--mut);font-size:13px;margin-bottom:14px}
+.card{background:var(--panel);border:1px solid #262b36;border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+select,input[type=range],textarea,input[type=file]{width:100%}
+select,textarea{background:var(--panel2);color:var(--txt);border:1px solid #2c323d;border-radius:10px;padding:10px}
+textarea{min-height:110px;resize:vertical;font-family:ui-monospace,monospace;font-size:13px}
+button{background:var(--panel2);color:var(--txt);border:1px solid #2c323d;border-radius:12px;padding:12px 14px;font-size:15px;cursor:pointer;font-weight:600;-webkit-tap-highlight-color:transparent}
+button:active{transform:scale(.98)}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+button.green{background:var(--acc2);border-color:var(--acc2);color:#04220f}
+button.big{flex:1;padding:16px;font-size:16px;min-width:110px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.grid{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.badge{display:inline-block;background:var(--panel2);border:1px solid #2c323d;border-radius:999px;padding:3px 10px;font-size:12px;color:var(--mut);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#reader{background:#12151b;border:1px solid #262b36;border-radius:14px;padding:14px;max-height:50vh;overflow:auto;line-height:1.75}
+.s{padding:2px 3px;border-radius:6px;cursor:pointer;transition:background .15s}
+.s:hover{background:#20242e}
+.s.active{background:#12233f;outline:1px solid var(--acc)}
+.s.hl{background:var(--hl);box-shadow:inset 3px 0 0 var(--hlb)}
+.dock{position:fixed;left:0;right:0;bottom:0;background:rgba(15,17,21,.97);backdrop-filter:blur(8px);border-top:1px solid #262b36;padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
+.dock .inner{max-width:820px;margin:0 auto}
+.mic{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut);margin-bottom:8px}
+.dot{width:10px;height:10px;border-radius:50%;background:#555;flex:none}
+.dot.on{background:var(--acc2);box-shadow:0 0 0 4px rgba(34,197,94,.18)}
+.note{font-size:12px;color:var(--mut);margin-top:6px}
+.warn{color:var(--warn)}
+code{background:#000;padding:1px 5px;border-radius:5px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔊 Lettore Vocale <span>eBook</span></h1>
+  <div class="sub">Importa un eBook e ascoltalo ad alta voce. Comandi vocali: <b>“stop / ferma / pausa”</b> → si ferma, <b>“evidenzia”</b> → evidenzia la frase in lettura, <b>“riprendi / continua”</b> → riparte da lì.</div>
+
+  <div class="card">
+    <label>1 · Importa eBook (TXT · EPUB · PDF)</label>
+    <input type="file" id="file" accept=".txt,.text,.md,.epub,.pdf"/>
+    <div class="note">EPUB letto automaticamente (spine OPF). PDF = supporto opzionale via pdf.js. I libri protetti da <b>DRM</b> non possono essere aperti.</div>
+    <label>…oppure incolla del testo</label>
+    <textarea id="paste" placeholder="Incolla qui il testo del libro…"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="loadPaste">Usa il testo incollato</button>
+      <button id="demo">Carica testo demo</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;gap:8px">
+      <span class="badge" id="bookName">Nessun libro</span>
+      <span class="badge" id="pos">0 / 0</span>
+    </div>
+    <div id="reader"><span class="note">Importa un libro per iniziare.</span></div>
+  </div>
+
+  <div class="card">
+    <label>Voce di lettura</label>
+    <select id="voice"></select>
+    <label>Velocità: <span id="rateVal">1.0×</span></label>
+    <input type="range" id="rate" min="0.5" max="2" step="0.1" value="1"/>
+    <div class="grid">
+      <button id="clearHl">Rimuovi evidenziazioni</button>
+      <button id="resetPos">Torna all'inizio</button>
+    </div>
+    <div class="note" id="support"></div>
+  </div>
+</div>
+
+<div class="dock">
+  <div class="inner">
+    <div class="mic"><span class="dot" id="dot"></span><span id="micTxt">Microfono non attivo</span>
+      <button id="micBtn" style="margin-left:auto;padding:8px 12px;font-size:13px">🎙️ Attiva ascolto</button>
+    </div>
+    <div class="row">
+      <button class="big primary" id="play">▶︎ Leggi</button>
+      <button class="big" id="stop">⏸ Stop</button>
+      <button class="big green" id="resume">⏭︎ Riprendi</button>
+    </div>
+    <div class="grid">
+      <button id="hl">✏️ Evidenzia frase</button>
+      <button id="prev">⏮ Indietro</button>
+      <button id="next">Avanti ⏭</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script id="app">
+(function(){
+"use strict";
+var LS_KEY="lettore_vocale_v1";
+var synth=window.speechSynthesis;
+var state={books:[],cur:-1,index:0,playing:false,voices:[],voiceURI:null};
+var recog=null,listening=false,stopListening=false,micWanted=false;
+function $(id){return document.getElementById(id);}
+function norm(s){return (s||"").toLowerCase().replace(/[^\p{L}\p{N}\s]/gu," ").replace(/\s+/g," ").trim();}
+function cur(){return state.cur>=0?state.books[state.cur]:null;}
+function toast(msg){var d=document.createElement("div");d.textContent=msg;
+  d.style.cssText="position:fixed;left:50%;top:14px;transform:translateX(-50%);background:#1e222b;border:1px solid #2c323d;color:#e8eaed;padding:8px 14px;border-radius:999px;font-size:13px;z-index:999;max-width:90vw;text-align:center";
+  document.body.appendChild(d);setTimeout(function(){if(d.parentNode)d.parentNode.removeChild(d);},1700);}
+
+/* ---------- testo -> frasi ---------- */
+function splitSentences(text){
+  var t=(text||"").replace(/\r\n?/g,"\n");
+  var chunks=t.split(/\n+/),out=[];
+  for(var i=0;i<chunks.length;i++){
+    var c=chunks[i].replace(/[ \t]+/g," ").trim();
+    if(!c) continue;
+    var m=c.match(/[^.!?…]+[.!?…]+[»"”’)\]]*|[^.!?…]+$/g);
+    if(m){for(var j=0;j<m.length;j++){var s=m[j].trim();if(s) out.push(s);}}
+    else out.push(c);
+  }
+  return out;
+}
+
+/* ---------- libreria ---------- */
+function addBook(name,text){
+  text=(text||"").trim();
+  if(!text){alert("Nessun testo trovato nel file.");return;}
+  var b={id:"b"+Date.now(),name:name,text:text,sentences:splitSentences(text),highlights:{},index:0};
+  state.books.push(b);state.cur=state.books.length-1;
+  if(state.books.length>1) toast("Libro aggiunto ("+state.books.length+" in libreria)");
+  renderBook();save();
+}
+function renderBook(){
+  var b=cur(),r=$("reader");r.innerHTML="";
+  $("bookName").textContent=b?b.name:"Nessun libro";
+  if(!b){r.innerHTML='<span class="note">Importa un libro per iniziare.</span>';$("pos").textContent="0 / 0";return;}
+  var frag=document.createDocumentFragment();
+  b.sentences.forEach(function(s,i){
+    var sp=document.createElement("span");
+    sp.className="s";sp.setAttribute("data-i",i);sp.textContent=s+" ";
+    sp.addEventListener("click",function(){
+      state.playing=false;synth.cancel();
+      state.index=i;b.index=i;renderActive();save();toast("Frase "+(i+1));
+    });
+    frag.appendChild(sp);
+  });
+  r.appendChild(frag);
+  state.index=Math.min(b.index||0,b.sentences.length-1);
+  renderActive();
+}
+function renderActive(){
+  var b=cur();if(!b) return;
+  var nodes=$("reader").children;
+  for(var i=0;i<nodes.length;i++){
+    var n=nodes[i],idx=parseInt(n.getAttribute("data-i"),10);
+    if(idx===state.index) n.classList.add("active");else n.classList.remove("active");
+    if(b.highlights[idx]) n.classList.add("hl");else n.classList.remove("hl");
+  }
+  $("pos").textContent=(state.index+1)+" / "+b.sentences.length;
+  var a=$("reader").querySelector(".s.active");
+  if(a&&a.scrollIntoView) a.scrollIntoView({block:"center",behavior:"smooth"});
+}
+
+/* ---------- voci ---------- */
+function loadVoices(){
+  state.voices=synth.getVoices()||[];
+  var sel=$("voice"),prev=sel.value||state.voiceURI||"";
+  sel.innerHTML="";
+  var it=state.voices.filter(function(v){return /^it/i.test(v.lang);});
+  var others=state.voices.filter(function(v){return !/^it/i.test(v.lang);});
+  it.concat(others).forEach(function(v){
+    var o=document.createElement("option");
+    o.value=v.voiceURI;o.textContent=v.name+" — "+v.lang;
+    sel.appendChild(o);
+  });
+  if(prev){for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===prev){sel.selectedIndex=i;break;}}}
+  if(sel.selectedIndex<0&&it.length) sel.selectedIndex=0;
+}
+function selVoice(){
+  var uri=$("voice").value;
+  for(var i=0;i<state.voices.length;i++){if(state.voices[i].voiceURI===uri) return state.voices[i];}
+  return null;
+}
+
+/* ---------- lettura ---------- */
+function speakFrom(i){
+  var b=cur();
+  if(!b){toast("Importa prima un libro");return;}
+  if(i<0) i=0;
+  if(i>=b.sentences.length){state.playing=false;renderActive();return;}
+  state.index=i;b.index=i;
+  synth.cancel();
+  var u=new SpeechSynthesisUtterance(b.sentences[i]);
+  u.lang="it-IT";
+  var v=selVoice();if(v) u.voice=v;
+  u.rate=parseFloat($("rate").value)||1;
+  u.onend=function(){ if(state.playing) speakFrom(state.index+1); };
+  u.onerror=function(e){ if(state.playing&&e.error!=="interrupted"&&e.error!=="canceled") speakFrom(state.index+1); };
+  state.playing=true;
+  renderActive();save();
+  synth.speak(u);
+}
+function stopReading(){ state.playing=false; synth.cancel(); toast("In pausa alla frase "+(state.index+1)); save(); }
+function resumeReading(){ var b=cur(); if(!b){toast("Importa prima un libro");return;} speakFrom(state.index); }
+function highlightCurrent(){
+  var b=cur();if(!b){toast("Importa prima un libro");return;}
+  b.highlights[state.index]=true;renderActive();save();
+  toast("Frase "+(state.index+1)+" evidenziata");
+}
+function goNext(){var b=cur();if(!b)return;var p=state.playing;var i=Math.min(state.index+1,b.sentences.length-1);state.playing=false;synth.cancel();state.index=i;b.index=i;renderActive();save();if(p)speakFrom(i);}
+function goPrev(){var b=cur();if(!b)return;var p=state.playing;var i=Math.max(state.index-1,0);state.playing=false;synth.cancel();state.index=i;b.index=i;renderActive();save();if(p)speakFrom(i);}
+function setRate(v){v=Math.max(0.5,Math.min(2,Math.round(v*10)/10));$("rate").value=v;
+  $("rateVal").textContent=v.toFixed(1)+"×";
+  if(state.playing){var p=state.index;state.playing=false;synth.cancel();speakFrom(p);}}
+
+/* ---------- comandi vocali ---------- */
+function isEcho(n){
+  if(n.length<14) return false;
+  var b=cur();if(!b) return false;
+  var s=norm(b.sentences[state.index]||"");
+  if(s.indexOf(n)>=0) return true;
+  var w=n.split(" "),hit=0;
+  for(var i=0;i<w.length;i++){ if(w[i].length>2&&s.indexOf(w[i])>=0) hit++; }
+  return w.length>0&&(hit/w.length)>0.7;
+}
+function matchCmd(n){
+  if(/\b(stop|ferma|fermati|fermo|pausa|basta|silenzio|alt|arre)\b/.test(n)) return "stop";
+  if(/\b(riprendi|riprende|ripresa|continua|continuare|riparti|riavvia|play|avvia|vai|leggi|rileggi|ascolta)\b/.test(n)) return "resume";
+  if(/\b(evidenzia|evidenziare|evidenziami|sottolinea|segna|salva|memorizza)\b/.test(n)) return "hl";
+  if(/\b(avanti|successiva|prossima|salta|next)\b/.test(n)) return "next";
+  if(/\b(indietro|precedente|torna|prev)\b/.test(n)) return "prev";
+  if(/\b(piu veloce|accelera|velocizza)\b/.test(n)) return "faster";
+  if(/\b(piu lento|rallenta|rallentare)\b/.test(n)) return "slower";
+  return null;
+}
+function handleVoice(t){
+  var n=norm(t);if(!n) return;
+  if(isEcho(n)) return;
+  var c=matchCmd(n);if(!c) return;
+  if(c==="stop") stopReading();
+  else if(c==="resume") resumeReading();
+  else if(c==="hl") highlightCurrent();
+  else if(c==="next") goNext();
+  else if(c==="prev") goPrev();
+  else if(c==="faster") setRate(parseFloat($("rate").value)+0.2);
+  else if(c==="slower") setRate(parseFloat($("rate").value)-0.2);
+}
+function setMic(on){
+  $("dot").className="dot"+(on?" on":"");
+  $("micTxt").textContent=on?"Microfono attivo — parla ora ('stop', 'evidenzia', 'riprendi')":"Microfono non attivo";
+  $("micBtn").textContent=on?"🎙️ Disattiva ascolto":"🎙️ Attiva ascolto";
+}
+function initRecog(){
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR) return null;
+  var r=new SR();
+  r.lang="it-IT";r.continuous=true;r.interimResults=true;r.maxAlternatives=1;
+  r.onresult=function(e){
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      if(!e.results[i].isFinal) continue;
+      handleVoice(e.results[i][0].transcript);
+    }
+  };
+  r.onend=function(){
+    if(listening&&micWanted&&!stopListening){ try{r.start();}catch(err){} }
+    else if(!micWanted){ listening=false; setMic(false); }
+  };
+  r.onerror=function(e){
+    if(e.error==="not-allowed"||e.error==="service-not-allowed"){
+      micWanted=false;listening=false;stopListening=true;setMic(false);
+      $("support").innerHTML='<span class="warn">Accesso al microfono negato: consenti il microfono nel browser (icona a sinistra della barra indirizzi) e ricarica.</span>';
+    }else if(e.error==="audio-capture"){
+      micWanted=false;listening=false;setMic(false);
+      $("support").innerHTML='<span class="warn">Nessun microfono trovato.</span>';
+    }
+  };
+  return r;
+}
+function startMic(){
+  if(!recog) recog=initRecog();
+  if(!recog){
+    $("support").innerHTML='<span class="warn">I comandi vocali richiedono Chrome o Edge. Usa i pulsanti qui sotto.</span>';
+    return;
+  }
+  micWanted=true;stopListening=false;listening=true;
+  try{recog.start();}catch(e){}
+  setMic(true);
+}
+function stopMic(){micWanted=false;listening=false;stopListening=true;if(recog){try{recog.stop();}catch(e){}}setMic(false);}
+
+/* ---------- file ---------- */
+function htmlToText(html){
+  var d=new DOMParser().parseFromString(html,"text/html");
+  var rm=d.querySelectorAll("script,style");
+  for(var i=0;i<rm.length;i++){if(rm[i].parentNode)rm[i].parentNode.removeChild(rm[i]);}
+  var els=d.querySelectorAll("p,h1,h2,h3,h4,h5,h6,li,blockquote,div,br,tr");
+  for(var j=0;j<els.length;j++){
+    var e=els[j];
+    if(e.tagName==="BR"){ if(e.parentNode) e.parentNode.replaceChild(d.createTextNode("\n"),e); }
+    else e.appendChild(d.createTextNode("\n"));
+  }
+  var t=d.body?d.body.textContent:d.documentElement.textContent;
+  return (t||"").replace(/[ \t]+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+}
+function readEpub(file){
+  if(!window.JSZip) return Promise.reject(new Error("Libreria EPUB non caricata (serve connessione internet per JSZip)."));
+  return JSZip.loadAsync(file).then(function(zip){
+    var cf=zip.file("META-INF/container.xml");
+    if(!cf) throw new Error("container.xml non trovato (file non EPUB o protetto da DRM).");
+    return cf.async("string").then(function(container){
+      var m=container.match(/full-path="([^"]+)"/);
+      if(!m) throw new Error("Percorso OPF non trovato.");
+      var opfPath=m[1];
+      var base=opfPath.indexOf("/")>=0?opfPath.substring(0,opfPath.lastIndexOf("/")+1):"";
+      return zip.file(opfPath).async("string").then(function(opf){
+        var doc=new DOMParser().parseFromString(opf,"application/xml");
+        var manifest={},items=doc.getElementsByTagName("item");
+        for(var i=0;i<items.length;i++){manifest[items[i].getAttribute("id")]=items[i].getAttribute("href");}
+        var spine=doc.getElementsByTagName("itemref"),chain=Promise.resolve(""),parts=[];
+        for(var j=0;j<spine.length;j++){
+          var href=manifest[spine[j].getAttribute("idref")];
+          if(!href) continue;
+          var p=(base+href).split("#")[0];
+          var entry=zip.file(p)||zip.file(decodeURIComponent(p));
+          if(!entry) continue;
+          (function(entry){
+            chain=chain.then(function(){return entry.async("string");}).then(function(html){parts.push(htmlToText(html));});
+          })(entry);
+        }
+        return chain.then(function(){return parts.join("\n\n");});
+      });
+    });
+  });
+}
+function loadScript(src){return new Promise(function(res,rej){var s=document.createElement("script");s.src=src;s.onload=res;s.onerror=function(){rej(new Error("Impossibile caricare pdf.js"));};document.head.appendChild(s);});}
+function readPdf(file){
+  if(!window.pdfjsLib){
+    return loadScript("https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js").then(function(){
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+    });
+  }
+  return Promise.resolve();
+}
+function extractPdf(file){
+  return readPdf(file).then(function(){return file.arrayBuffer();}).then(function(buf){
+    return window.pdfjsLib.getDocument({data:buf}).promise;
+  }).then(function(pdf){
+    var chain=Promise.resolve(""),out=[];
+    for(var i=1;i<=pdf.numPages;i++){
+      (function(n){chain=chain.then(function(){return pdf.getPage(n);}).then(function(page){
+        return page.getTextContent();
+      }).then(function(tc){
+        var line=tc.items.map(function(it){return it.str;}).join(" ");
+        out.push(line);
+      });})(i);
+    }
+    return chain.then(function(){return out.join("\n\n");});
+  });
+}
+function readFile(f){
+  var lower=f.name.toLowerCase();
+  if(lower.slice(-5)===".epub"){
+    toast("Apro EPUB…");
+    readEpub(f).then(function(t){addBook(f.name,t);}).catch(function(e){alert("Errore EPUB: "+e.message);});
+  }else if(lower.slice(-4)===".pdf"){
+    toast("Apro PDF…");
+    extractPdf(f).then(function(t){addBook(f.name,t);}).catch(function(e){alert("Errore PDF: "+e.message+"\nSe il libro è protetto da DRM non può essere aperto.");});
+  }else{
+    f.text().then(function(t){addBook(f.name,t);}).catch(function(e){alert("Errore: "+e.message);});
+  }
+}
+
+/* ---------- salvataggio ---------- */
+function save(){
+  try{
+    var data={cur:state.cur,voiceURI:$("voice").value,rate:$("rate").value,
+      books:state.books.map(function(b){
+        return {id:b.id,name:b.name,text:b.text,index:b.index,highlights:Object.keys(b.highlights)};
+      })};
+    localStorage.setItem(LS_KEY,JSON.stringify(data));
+  }catch(e){ /* quota superata: la posizione non verrà salvata */ }
+}
+function load(){
+  try{
+    var raw=localStorage.getItem(LS_KEY);if(!raw) return;
+    var d=JSON.parse(raw);
+    state.books=(d.books||[]).map(function(b){
+      var o={id:b.id,name:b.name,text:b.text,sentences:splitSentences(b.text),highlights:{},index:b.index||0};
+      (b.highlights||[]).forEach(function(i){o.highlights[i]=true;});
+      return o;
+    });
+    state.cur=(typeof d.cur==="number"&&d.cur<state.books.length)?d.cur:(state.books.length?0:-1);
+    if(d.voiceURI) state.voiceURI=d.voiceURI;
+    if(d.rate) $("rate").value=d.rate;
+  }catch(e){}
+}
+
+/* ---------- eventi ---------- */
+function bind(){
+  $("file").addEventListener("change",function(e){var f=e.target.files[0];if(f)readFile(f);e.target.value="";});
+  $("loadPaste").addEventListener("click",function(){
+    var t=$("paste").value; if(!t.trim()){toast("Incolla prima del testo");return;}
+    addBook("Testo incollato",t); $("paste").value="";
+  });
+  $("demo").addEventListener("click",function(){
+    $("paste").value="Questa è una dimostrazione del lettore vocale. Il testo viene diviso in frasi e letto una alla volta, così puoi dirlo con la voce: stop per fermarti, evidenzia per segnare la frase, riprendi per continuare esattamente da dove eri rimasto. Prova ad attivare il microfono e pronuncia questi comandi mentre la lettura procede. Buon ascolto!";
+    toast("Testo demo pronto: premi «Usa il testo incollato»");
+  });
+  $("play").addEventListener("click",function(){var b=cur();if(!b){toast("Importa prima un libro");return;}if(state.playing){toast("Già in lettura");return;}speakFrom(state.index);});
+  $("stop").addEventListener("click",stopReading);
+  $("resume").addEventListener("click",resumeReading);
+  $("hl").addEventListener("click",highlightCurrent);
+  $("next").addEventListener("click",goNext);
+  $("prev").addEventListener("click",goPrev);
+  $("micBtn").addEventListener("click",function(){ if(micWanted) stopMic(); else startMic(); });
+  $("voice").addEventListener("change",function(){state.voiceURI=$("voice").value;save();});
+  $("rate").addEventListener("input",function(){setRate(parseFloat($("rate").value));save();});
+  $("clearHl").addEventListener("click",function(){var b=cur();if(!b)return;b.highlights={};renderActive();save();toast("Evidenziazioni rimosse");});
+  $("resetPos").addEventListener("click",function(){var b=cur();if(!b)return;state.playing=false;synth.cancel();state.index=0;b.index=0;renderActive();save();toast("Torna all'inizio");});
+  document.addEventListener("keydown",function(e){
+    if(e.target&&/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+    if(e.code==="Space"){e.preventDefault(); if(state.playing) stopReading(); else resumeReading();}
+    else if(e.key==="h"||e.key==="H") highlightCurrent();
+  });
+  if(synth&&typeof synth.onvoiceschanged!=="undefined") synth.onvoiceschanged=loadVoices;
+}
+
+/* ---------- init ---------- */
+function init(){
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  var secure=(window.isSecureContext===true)||location.protocol==="https:"||location.hostname==="localhost"||location.protocol==="file:";
+  var msg=[];
+  msg.push(SR?"Comandi vocali: <b>supportati</b> da questo browser.":"Comandi vocali: <span class='warn'>non supportati</span> — usa Chrome o Edge (o i pulsanti).");
+  if(!secure) msg.push("<span class='warn'>Il microfono richiede HTTPS o localhost.</span>");
+  if(!synth) msg.push("<span class='warn'>Sintesi vocale non disponibile in questo browser.</span>");
+  $("support").innerHTML=msg.join(" ");
+  load();bind();loadVoices();
+  state.rate=parseFloat($("rate").value)||1;
+  $("rateVal").textContent=state.rate.toFixed(1)+"×";
+  if(cur()) renderBook(); else renderActive();
+  setMic(false);
+}
+if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",init); else init();
+})();
+</script>
+</body>
+</html>
