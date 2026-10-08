@@ -449,5 +449,48 @@ function init(){
 if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",init); else init();
 })();
 </script>
+  <!-- Pulsante fluttuante per catturare la citazione su mobile -->
+<div id="quoteBtn" style="display:none; position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#e53e3e; color:white; padding:12px 24px; border-radius:30px; z-index:99999; font-weight:bold; box-shadow:0 6px 15px rgba(0,0,0,0.4); cursor:pointer; font-size:15px; text-align:center;">
+  ✨ Cattura Citazione per Instagram & Blog
+</div>
+
+<script>
+  let selectedQuoteText = "";
+
+  // Rileva la selezione del testo in tempo reale su qualsiasi smartphone
+  document.addEventListener('selectionchange', function() {
+    const selection = window.getSelection();
+    const text = selection ? selection.toString().trim() : "";
+    const btn = document.getElementById('quoteBtn');
+    
+    if (text.length > 3) {
+      selectedQuoteText = text;
+      if (btn) btn.style.display = 'block';
+    } else {
+      if (btn) btn.style.display = 'none';
+    }
+  });
+
+  // Quando tocchi il pulsante fluttuante, formatta e copia tutto negli appunti
+  document.addEventListener('DOMContentLoaded', function() {
+    const btn = document.getElementById('quoteBtn');
+    if (btn) {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (!selectedQuoteText) return;
+
+        const formatted = `"${selectedQuoteText}"\n\n#LEcoDellePagine #LettriceDiEmozioni #FrasiLibri #LibriDalWeb`;
+
+        navigator.clipboard.writeText(formatted).then(() => {
+          alert("Citazione copiata con successo! Pronta da incollare su Instagram o sul blog.");
+          btn.style.display = 'none';
+          window.getSelection().removeAllRanges();
+        }).catch(err => {
+          console.error("Errore di copia: ", err);
+        });
+      });
+    }
+  });
+</script>
 </body>
 </html>
